@@ -6,12 +6,11 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  // Neon/pooled setups: DATABASE_URL is the pooled (pgbouncer) URL for the app,
-  // DIRECT_URL is the unpooled URL Prisma uses for migrations. If you are not
-  // using a pooler, set DIRECT_URL to the same value as DATABASE_URL.
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  // Use the DIRECT (unpooled) connection string. On Neon that is the host
+  // WITHOUT the "-pooler" suffix. A single Render/Railway instance does not need
+  // a pooler, and `prisma migrate deploy` on boot needs a direct connection.
+  url      = env("DATABASE_URL")
 }
 
 // ------------------------------------------------------------------ enums

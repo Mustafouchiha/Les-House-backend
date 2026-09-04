@@ -182,22 +182,24 @@ paneli chiqadi — "Kim sifatida" ro'yxatidan seed qilingan rolni tanlang
 
 ### Render — Node runtime (eng oddiy)
 
-Yangi **Web Service** yarating, bu repo'ni ulang:
+Yangi **Web Service** yarating, bu repo'ni ulang. **Build/Start Command'larni
+o'zgartirish shart emas** — default qiymatlar ishlaydi:
 
 | Sozlama | Qiymat |
 |---|---|
 | Runtime | Node |
-| Build Command | `npm install && npm run build` |
-| Start Command | `npm run start:migrate` |
+| Build Command | *(default — `yarn` / `npm install`)* |
+| Start Command | *(default — `npm run start`)* |
 | Health Check Path | `/health` |
 
-`npm run build` = `prisma generate` + `tsc` → `dist/server.js`.
-`npm run start:migrate` = `prisma migrate deploy` + `node dist/server.js`.
+`npm install` → `postinstall` skripti `prisma generate` + `tsc` ni ishga tushiradi
+va `dist/server.js` ni yaratadi. `npm run start` = `prisma migrate deploy` +
+`node dist/server.js` (migratsiya idempotent).
 
-Render'da **PostgreSQL** yarating (New → PostgreSQL) va uning **Internal Database URL**'ini
-`DATABASE_URL` ga qo'ying.
+DB: `DATABASE_URL` ga **direct (pooler'siz)** Neon URL'ini qo'ying — Neon hostidan
+`-pooler` qismini olib tashlang.
 
-Seed (bir marta): Render Shell'da `npm run seed`.
+Seed (bir marta, ag'ar kerak bo'lsa): Render Shell'da `npm run seed`.
 
 ### Render — Docker (alternativa)
 

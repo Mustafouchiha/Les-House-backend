@@ -7,8 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "prisma generate && tsc -p tsconfig.json",
-    "start": "node dist/server.js",
-    "start:migrate": "prisma migrate deploy && node dist/server.js",
+    "start": "prisma migrate deploy && node dist/server.js",
     "bot": "tsx src/bot.ts",
     "typecheck": "tsc -p tsconfig.check.json",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -17,7 +16,7 @@
     "migrate": "prisma migrate deploy",
     "migrate:dev": "prisma migrate dev",
     "seed": "prisma db seed",
-    "postinstall": "prisma generate"
+    "postinstall": "node scripts/postinstall.mjs"
   },
   "prisma": { "seed": "tsx prisma/seed.ts" },
   "dependencies": {

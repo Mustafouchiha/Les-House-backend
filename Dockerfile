@@ -4,11 +4,9 @@ RUN apt-get update && apt-get install -y openssl ca-certificates && rm -rf /var/
 WORKDIR /app
 
 FROM base AS build
-COPY package.json package-lock.json* ./
-COPY prisma ./prisma
-RUN npm install --no-audit --no-fund
 COPY . .
-RUN npm run build
+# postinstall runs: prisma generate + tsc -> dist/
+RUN npm install --no-audit --no-fund
 
 FROM base AS runtime
 ENV NODE_ENV=production
