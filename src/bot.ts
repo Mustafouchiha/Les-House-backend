@@ -1,11 +1,11 @@
 import { env } from "./env.js";
-import { prisma } from "./db.js";
 import { upsertTelegramUser, linkPhoneAndResolveRole } from "./services/auth.service.js";
 
 /**
- * Minimal Telegram bot: /start greets the user, opens the Mini App, and asks
- * for the phone number ONLY if this Telegram account has none on file yet —
- * once linked, the request-contact keyboard is not shown again.
+ * Minimal Telegram bot: /start just greets and opens the Mini App. Phone
+ * collection happens INSIDE the Mini App (Telegram.WebApp.requestContact —
+ * see frontend/src/pages/Login.jsx), not via a bot-level reply keyboard, so
+ * nothing extra pops up in the chat itself.
  * Runs only when BOT_TOKEN is set; otherwise it is a no-op so the API can boot
  * without a bot (spec: "Bot yo'q — men ko'rsatma yozaman").
  *
@@ -19,33 +19,12 @@ export async function startBot(): Promise<void> {
     console.log("[bot] disabled (no BOT_TOKEN)");
     return;
   }
-  const { Bot, InlineKeyboard, Keyboard } = await import("grammy");
+  const { Bot, InlineKeyboard } = await import("grammy");
   const bot = new Bot(env.botToken);
-
-  async function hasPhoneOnFile(telegramId: number): Promise<boolean> {
-    const u = await prisma.user.findUnique({ where: { telegramUserId: BigInt(telegramId) } });
-    return !!u?.phoneNumber;
-  }
 
   bot.command("start", async (ctx) => {
     const kb = new InlineKeyboard().webApp("📱 Mini Appni ochish", env.miniAppUrl);
-    await ctx.reply(
-      [
-        "Taxta Bozor — yog'och va qurilish materiallari savdo tizimi.",
-        "",
-        "Mini App orqali: katalog, narxlar, savat va kalkulyator.",
-        "Xodimlar uchun: savdo, ombor, kassa, qarzlar va hisobotlar.",
-        "",
-        "Boshlash uchun quyidagi tugmani bosing:",
-      ].join("\n"),
-      { reply_markup: kb }
-    );
-
-    // Ask for the phone only while this account has none linked yet.
-    if (ctx.from && !(await hasPhoneOnFile(ctx.from.id))) {
-      const contactKb = new Keyboard().requestContact("📞 Raqamni ulashish").resized().oneTime();
-      await ctx.reply("Davom etish uchun telefon raqamingizni ulashing:", { reply_markup: contactKb });
-    }
+    await ctx.reply("Taxta Bozor", { reply_markup: kb });
   });
 
   bot.command("app", async (ctx) => {
@@ -53,15 +32,12 @@ export async function startBot(): Promise<void> {
     await ctx.reply("Mini App:", { reply_markup: kb });
   });
 
+  // Fallback: if someone shares a contact unprompted (attachment menu), link
+  // it — no keyboard is ever shown to ask for this, per the above.
   bot.on("message:contact", async (ctx) => {
     const contact = ctx.message.contact;
     if (!ctx.from || !contact) return;
-    if (contact.user_id && contact.user_id !== ctx.from.id) {
-      await ctx.reply("Iltimos, faqat o'zingizning kontaktingizni ulashing.", {
-        reply_markup: { remove_keyboard: true },
-      });
-      return;
-    }
+    if (contact.user_id && contact.user_id !== ctx.from.id) return;
     try {
       const user = await upsertTelegramUser({
         id: ctx.from.id,
@@ -71,11 +47,9 @@ export async function startBot(): Promise<void> {
         language_code: ctx.from.language_code,
       });
       await linkPhoneAndResolveRole(user.id, contact.phone_number);
-      await ctx.reply("✅ Telefon raqamingiz tasdiqlandi. Endi Mini App'ni ochishingiz mumkin.", {
-        reply_markup: { remove_keyboard: true },
-      });
+      await ctx.reply("✅ Telefon raqamingiz tasdiqlandi.");
     } catch (e) {
-      await ctx.reply(`Xatolik: ${(e as Error).message}`, { reply_markup: { remove_keyboard: true } });
+      await ctx.reply(`Xatolik: ${(e as Error).message}`);
     }
   });
 
