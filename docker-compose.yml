@@ -1,0 +1,21 @@
+# Local development database. Production uses the PaaS-managed Postgres.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: taxta
+      POSTGRES_PASSWORD: taxta
+      POSTGRES_DB: taxta_bozor
+    ports:
+      - "5432:5432"
+    volumes:
+      - taxta_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taxta -d taxta_bozor"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  taxta_pgdata:

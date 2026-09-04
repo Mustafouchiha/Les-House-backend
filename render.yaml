@@ -1,0 +1,34 @@
+# Render blueprint for the backend (this repo) + its PostgreSQL.
+databases:
+  - name: taxta-bozor-db
+    plan: free
+    databaseName: taxta_bozor
+    user: taxta
+
+services:
+  - type: web
+    name: taxta-bozor-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: taxta-bozor-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_DEV_MODE
+        value: "false"
+      - key: BOT_TOKEN
+        sync: false
+      - key: MINI_APP_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: ADMIN_SEED_PHONE
+        sync: false
