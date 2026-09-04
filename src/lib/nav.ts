@@ -3,9 +3,9 @@ import type { Role } from "@prisma/client";
 // Server copy of the role → nav map (spec §26). The frontend has its own copy for
 // rendering; this one is the source of truth for /me.
 export const NAV_BY_ROLE: Record<Role, string[]> = {
-  CUSTOMER: ["mahsulotlar", "savat", "kalkulyator", "hisobim", "xaridlar"],
-  WORKER: ["savdo", "mijozlar", "tarix"],
-  OPERATOR: ["dashboard", "savdo", "ombor", "kirim", "mahsulotlar", "mijozlar", "qarzlar", "kassa", "tarix"],
+  CUSTOMER: ["mahsulotlar", "savat", "kalkulyator", "xaridlar", "profil"],
+  WORKER: ["savdo", "mijozlar", "tarix", "profil"],
+  OPERATOR: ["dashboard", "savdo", "ombor", "kirim", "mahsulotlar", "mijozlar", "qarzlar", "kassa", "tarix", "profil"],
   MANAGER: [
     "dashboard",
     "savdo",
@@ -17,6 +17,7 @@ export const NAV_BY_ROLE: Record<Role, string[]> = {
     "hisobotlar",
     "kassa",
     "tarix",
+    "profil",
   ],
   ADMIN: [
     "dashboard",
@@ -31,5 +32,6 @@ export const NAV_BY_ROLE: Record<Role, string[]> = {
     "kalkulyator",
     "employees",
     "tarix",
+    "profil",
   ],
 };
