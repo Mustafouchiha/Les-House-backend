@@ -180,23 +180,59 @@ paneli chiqadi — "Kim sifatida" ro'yxatidan seed qilingan rolni tanlang
 
 ## Production deploy (PaaS)
 
+### Render — Node runtime (eng oddiy)
+
+Yangi **Web Service** yarating, bu repo'ni ulang:
+
+| Sozlama | Qiymat |
+|---|---|
+| Runtime | Node |
+| Build Command | `npm install && npm run build` |
+| Start Command | `npm run start:migrate` |
+| Health Check Path | `/health` |
+
+`npm run build` = `prisma generate` + `tsc` → `dist/server.js`.
+`npm run start:migrate` = `prisma migrate deploy` + `node dist/server.js`.
+
+Render'da **PostgreSQL** yarating (New → PostgreSQL) va uning **Internal Database URL**'ini
+`DATABASE_URL` ga qo'ying.
+
+Seed (bir marta): Render Shell'da `npm run seed`.
+
+### Render — Docker (alternativa)
+
+`render.yaml` blueprint tayyor (Postgres + Docker API). Yoki Web Service'da
+Runtime = Docker, Dockerfile Path = `Dockerfile`. Boshqa hech narsa kerak emas —
+Dockerfile build + migrate + start ni o'zi qiladi.
+
 ### Railway
 
-1. Repo'ni ulang. Railway `railway.json` ni topadi (`backend/Dockerfile`).
+1. Repo'ni ulang. Railway `railway.json` ni topadi (`Dockerfile`).
 2. **PostgreSQL** plugin qo'shing — `DATABASE_URL` avtomatik ulanadi.
-3. Variables: `JWT_SECRET`, `NODE_ENV=production`, `AUTH_DEV_MODE=false`,
-   `CORS_ORIGIN=https://<frontend-domain>`, `MINI_APP_URL=https://<frontend-domain>`,
-   `ADMIN_SEED_PHONE`, keyin `BOT_TOKEN` (bot yaratgach).
-4. Deploy — `prisma migrate deploy` boot'da avtomatik ishlaydi. Seed'ni bir marta
-   qo'lda: `railway run npm --prefix backend run seed`.
-5. Frontend'ni alohida static service sifatida: build `cd frontend && npm i && npm
-   run build`, publish `frontend/dist`, `VITE_API_URL=https://<backend-domain>`.
+3. Variables (pastdagi jadval).
+4. Deploy — `prisma migrate deploy` boot'da avtomatik. Seed: `railway run npm run seed`.
 
-### Render
+### Environment Variables (Render / Railway)
 
-`render.yaml` blueprint tayyor: Postgres + API (Docker) + static frontend. Dashboard'da
-`BOT_TOKEN`, `MINI_APP_URL`, `CORS_ORIGIN`, `ADMIN_SEED_PHONE`, `VITE_API_URL` ni
-to'ldiring.
+| Kalit | Qiymat | Majburiy |
+|---|---|---|
+| `DATABASE_URL` | Postgres ulanish satri (Render: Internal Database URL) | ✅ |
+| `JWT_SECRET` | uzun tasodifiy satr (`openssl rand -hex 32`) | ✅ |
+| `NODE_ENV` | `production` | ✅ |
+| `AUTH_DEV_MODE` | `false` | ✅ |
+| `CORS_ORIGIN` | frontend domeni, masalan `https://les-house.onrender.com` | ✅ |
+| `PORT` | Render/Railway o'zi beradi — **qo'ymang** (kod `process.env.PORT` ni oladi) | — |
+| `MINI_APP_URL` | frontend domeni (bot tugmasi uchun) | bot bo'lsa |
+| `BOT_TOKEN` | BotFather tokeni | bot bo'lsa |
+| `ADMIN_SEED_PHONE` | seed admin telefoni, masalan `+998901234567` | seed uchun |
+| `TELEGRAM_AUTH_TTL` | `86400` | — |
+| `CBU_RATE_URL` | `https://cbu.uz/uz/arkhiv-kursov-valyut/json/` | — |
+| `DEFAULT_USD_UZS` | `12800` | — |
+
+### Frontend (alohida repo: Les-House)
+
+Static Site: Build `npm install && npm run build`, Publish `dist`, SPA rewrite
+`/* → /index.html`, `VITE_API_URL=https://<backend-domain>`.
 
 ### Telegram bot (BotFather) — bot yaratgandan keyin
 
