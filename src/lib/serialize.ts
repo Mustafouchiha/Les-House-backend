@@ -34,6 +34,12 @@ export function sizeLabel(p: Product): string | null {
   return parts.join(" × ") + " mm";
 }
 
+export function productImages(p: Product): string[] {
+  const raw = p.images;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x): x is string => typeof x === "string" && x.length > 0).slice(0, 4);
+}
+
 /**
  * Serialize a product for the API. CUSTOMER / WORKER get the storefront view only
  * (spec §11, §14, §34); OPERATOR+ additionally get cost, margins and exact stock.
@@ -43,6 +49,7 @@ export function serializeProduct(
   role: Role | undefined
 ) {
   const avail = availability(p.stockQty, p.minStock);
+  const images = productImages(p);
   const base = {
     id: p.id,
     sku: p.sku,
@@ -57,7 +64,8 @@ export function serializeProduct(
     sizeLabel: sizeLabel(p),
     sellPrice: D(p.sellPrice).toNumber(),
     rating: p.rating != null ? D(p.rating).toNumber() : null,
-    imageUrl: p.imageUrl,
+    images,
+    imageUrl: images[0] ?? p.imageUrl ?? null,
     availability: avail,
     isResidual: p.isResidual,
   };

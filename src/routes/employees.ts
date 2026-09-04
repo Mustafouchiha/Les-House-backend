@@ -111,6 +111,55 @@ const routes: FastifyPluginAsync = async (app) => {
     });
     return e;
   });
+
+  // Delete a staff member's roster entry and close their app account.
+  // The linked User is hard-deleted only if it has no sale/audit history
+  // (nothing would reference it); otherwise it is unlinked, dropped to
+  // CUSTOMER and BLOCKED so historical sales/audit rows stay intact.
+  app.delete("/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const emp = await prisma.employee.findUnique({ where: { id } });
+    if (!emp) return reply.code(404).send({ error: "not_found" });
+    if (emp.phone === req.currentUser!.phoneNumber) {
+      return reply.code(422).send({ error: "self_delete", message: "O'zingizni o'chira olmaysiz" });
+    }
+
+    const user = await prisma.user.findFirst({ where: { employeeId: id } });
+    let userOutcome: "deleted" | "blocked" | "none" = "none";
+
+    if (user) {
+      const [saleCount, movementCount, auditCount, cashCount] = await Promise.all([
+        prisma.sale.count({ where: { sellerId: user.id } }),
+        prisma.stockMovement.count({ where: { userId: user.id } }),
+        prisma.auditLog.count({ where: { userId: user.id } }),
+        prisma.cashTransaction.count({ where: { userId: user.id } }),
+      ]);
+      if (saleCount + movementCount + auditCount + cashCount === 0) {
+        await prisma.user.delete({ where: { id: user.id } });
+        userOutcome = "deleted";
+      } else {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { employeeId: null, role: "CUSTOMER", status: "BLOCKED" },
+        });
+        userOutcome = "blocked";
+      }
+    }
+
+    await prisma.employee.delete({ where: { id } });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.currentUser!.id,
+        role: "ADMIN",
+        action: "employee.delete",
+        entityType: "employee",
+        entityId: id,
+        oldValue: { phone: emp.phone, role: emp.role, firstName: emp.firstName, lastName: emp.lastName },
+        newValue: { userOutcome },
+      },
+    });
+    return { ok: true, userOutcome };
+  });
 };
 
 export default routes;

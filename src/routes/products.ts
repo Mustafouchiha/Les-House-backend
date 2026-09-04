@@ -25,6 +25,7 @@ const upsertSchema = z.object({
   minStock: z.number().nonnegative().optional(),
   rating: z.number().min(0).max(5).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
+  images: z.array(z.string().min(1)).max(4, "Ko'pi bilan 4 ta rasm").optional(),
   note: z.string().optional().nullable(),
 });
 

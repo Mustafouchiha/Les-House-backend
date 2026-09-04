@@ -192,7 +192,8 @@ model Product {
   minStock     Decimal         @default(0) @db.Decimal(18, 4)
 
   rating       Decimal?        @db.Decimal(3, 2)
-  imageUrl     String?
+  imageUrl     String? // deprecated, kept for back-compat; first entry of `images`
+  images       Json            @default("[]") // string[] of up to 4 image URLs
   isResidual   Boolean         @default(false)
   active       Boolean         @default(true)
   note         String?

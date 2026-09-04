@@ -331,7 +331,7 @@ export async function refundSale(user: CurrentUser, saleId: string, reason?: str
       },
     });
     return serializeSale(updated, user.role);
-  });
+  }, { timeout: 15000 });
 }
 
 type SaleWithRels = Prisma.SaleGetPayload<{
