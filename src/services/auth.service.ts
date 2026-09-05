@@ -1,5 +1,6 @@
 import { prisma } from "../db.js";
 import { env } from "../env.js";
+import { isChatAlive } from "../lib/telegramApi.js";
 import type { TelegramUser } from "../auth/telegramInitData.js";
 import type { Role } from "@prisma/client";
 
@@ -47,16 +48,34 @@ export async function linkPhoneAndResolveRole(userId: string, rawPhone: string) 
     where: { phoneNumber: phone, NOT: { id: userId } },
   });
   if (clash) {
-    // Name which Telegram identity already holds it, so a person testing
-    // with more than one Telegram account can tell which one to actually use
-    // instead of getting a bare "already linked" dead end.
-    const who = clash.username ? `@${clash.username}` : clash.firstName || "boshqa Telegram akkaunt";
-    throw Object.assign(
-      new Error(
-        `Bu telefon raqami ${who} akkauntiga bog'langan. Agar bu siz bo'lsangiz, o'sha Telegram akkaunt orqali kiring.`
-      ),
-      { statusCode: 409 }
-    );
+    // A conflict where the OTHER Telegram account has been deactivated or
+    // deleted leaves the number permanently unreachable via that account —
+    // no code can ever be delivered to it, so hard-blocking here would trap
+    // the real owner forever. Confirm with Telegram itself, then free it.
+    const alive = await isChatAlive(clash.telegramUserId.toString());
+    if (!alive) {
+      await prisma.user.update({
+        where: { id: clash.id },
+        data: { phoneNumber: null, role: "CUSTOMER", status: "PENDING", employeeId: null },
+      });
+      if (clash.employeeId) {
+        await prisma.employee
+          .update({ where: { id: clash.employeeId }, data: { telegramUserId: null } })
+          .catch(() => undefined);
+      }
+      // fall through: phone is now free, proceed to link it below
+    } else {
+      // Name which Telegram identity already holds it, so a person testing
+      // with more than one Telegram account can tell which one to actually
+      // use instead of getting a bare "already linked" dead end.
+      const who = clash.username ? `@${clash.username}` : clash.firstName || "boshqa Telegram akkaunt";
+      throw Object.assign(
+        new Error(
+          `Bu telefon raqami ${who} akkauntiga bog'langan. Agar bu siz bo'lsangiz, o'sha Telegram akkaunt orqali kiring.`
+        ),
+        { statusCode: 409 }
+      );
+    }
   }
 
   const employee = await prisma.employee.findUnique({
