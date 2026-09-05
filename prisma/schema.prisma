@@ -407,6 +407,19 @@ model Setting {
   updatedAt DateTime @updatedAt
 }
 
+// One-time codes for the web (non-Telegram) login: sent to the user's
+// Telegram chat via the bot, entered on a desktop browser to sign in.
+model VerificationCode {
+  id         String    @id @default(cuid())
+  phone      String
+  code       String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, createdAt])
+}
+
 // ------------------------------------------------------------------ stubs (wired in later phases)
 model Supplier {
   id         String   @id @default(cuid())

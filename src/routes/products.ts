@@ -113,6 +113,27 @@ const routes: FastifyPluginAsync = async (app) => {
     });
     return serializeProduct(p, req.currentUser!.role);
   });
+
+  // Soft delete: keep the row (sale history references it) but hide it from
+  // every catalog/POS listing, which already filter on active=true.
+  app.delete("/:id", { preHandler: requireRole("OPERATOR") }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const before = await prisma.product.findUnique({ where: { id } });
+    if (!before) return reply.code(404).send({ error: "not_found" });
+
+    await prisma.product.update({ where: { id }, data: { active: false } });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.currentUser!.id,
+        role: req.currentUser!.role,
+        action: "product.delete",
+        entityType: "product",
+        entityId: id,
+        oldValue: { name: before.name, sku: before.sku },
+      },
+    });
+    return { ok: true };
+  });
 };
 
 export default routes;

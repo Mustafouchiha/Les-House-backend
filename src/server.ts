@@ -21,6 +21,8 @@ import { startBot } from "./bot.js";
 export async function buildServer() {
   const app = Fastify({
     logger: env.isProd ? true : { transport: { target: "pino-pretty" } },
+    // product images are uploaded as base64 data URLs (up to 4 per product)
+    bodyLimit: 10 * 1024 * 1024,
   });
 
   await app.register(cors, {
@@ -62,7 +64,7 @@ async function main() {
     await prisma.$connect();
     await app.listen({ port: env.port, host: "0.0.0.0" });
     app.log.info(`Taxta Bozor API on :${env.port} (devAuth=${env.authDevMode && !env.botToken})`);
-    startBot().catch((e) => app.log.warn(`bot: ${e.message}`));
+    if (!process.env.SKIP_BOT_POLLING) startBot().catch((e) => app.log.warn(`bot: ${e.message}`));
   } catch (e) {
     app.log.error(e);
     process.exit(1);
