@@ -47,7 +47,16 @@ export async function linkPhoneAndResolveRole(userId: string, rawPhone: string) 
     where: { phoneNumber: phone, NOT: { id: userId } },
   });
   if (clash) {
-    throw Object.assign(new Error("Bu telefon raqami boshqa accountga bog'langan"), { statusCode: 409 });
+    // Name which Telegram identity already holds it, so a person testing
+    // with more than one Telegram account can tell which one to actually use
+    // instead of getting a bare "already linked" dead end.
+    const who = clash.username ? `@${clash.username}` : clash.firstName || "boshqa Telegram akkaunt";
+    throw Object.assign(
+      new Error(
+        `Bu telefon raqami ${who} akkauntiga bog'langan. Agar bu siz bo'lsangiz, o'sha Telegram akkaunt orqali kiring.`
+      ),
+      { statusCode: 409 }
+    );
   }
 
   const employee = await prisma.employee.findUnique({
