@@ -16,6 +16,7 @@ import exchangeRateRoutes from "./routes/exchangeRate.js";
 import employeeRoutes from "./routes/employees.js";
 import reportRoutes from "./routes/reports.js";
 import cashRoutes from "./routes/cash.js";
+import branchRoutes from "./routes/branches.js";
 import { startBot } from "./bot.js";
 
 export async function buildServer() {
@@ -54,6 +55,7 @@ export async function buildServer() {
   await app.register(employeeRoutes, { prefix: "/api/employees" });
   await app.register(reportRoutes, { prefix: "/api/reports" });
   await app.register(cashRoutes, { prefix: "/api/cash" });
+  await app.register(branchRoutes, { prefix: "/api/branches" });
 
   return app;
 }

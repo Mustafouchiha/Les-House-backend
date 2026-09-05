@@ -38,6 +38,7 @@ const routes: FastifyPluginAsync = async (app) => {
         role: z.enum(["ADMIN", "MANAGER", "OPERATOR", "WORKER"]).default("WORKER"),
         position: z.string().optional(),
         department: z.string().optional(),
+        branch: z.string().optional(), // free-text; auto-creates the branch if new
         branchId: z.string().optional(),
         note: z.string().optional(),
       })
@@ -50,6 +51,9 @@ const routes: FastifyPluginAsync = async (app) => {
     const departmentId = body.department
       ? (await prisma.department.upsert({ where: { name: body.department }, create: { name: body.department }, update: {} })).id
       : undefined;
+    const branchId = body.branch
+      ? (await prisma.branch.upsert({ where: { name: body.branch }, create: { name: body.branch }, update: {} })).id
+      : body.branchId;
 
     const e = await prisma.employee.create({
       data: {
@@ -60,7 +64,7 @@ const routes: FastifyPluginAsync = async (app) => {
         status: "ACTIVE",
         positionId,
         departmentId,
-        branchId: body.branchId,
+        branchId,
         note: body.note,
         startedAt: new Date(),
       },

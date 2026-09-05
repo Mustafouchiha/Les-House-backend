@@ -100,7 +100,7 @@ model User {
 
 model Branch {
   id        String     @id @default(cuid())
-  name      String
+  name      String     @unique
   city      String?
   address   String?
   createdAt DateTime   @default(now())
@@ -263,6 +263,7 @@ model Customer {
   phone       String   @unique
   address     String?
   note        String?
+  blocked     Boolean  @default(false)
   totalSpent  Decimal  @default(0) @db.Decimal(18, 4)
   debtBalance Decimal  @default(0) @db.Decimal(18, 4)
   createdAt   DateTime @default(now())

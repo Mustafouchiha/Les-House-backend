@@ -28,6 +28,7 @@ const routes: FastifyPluginAsync = async (app) => {
         name: c.name,
         phone: c.phone,
         address: c.address,
+        blocked: c.blocked,
         debt: D(c.debtBalance).toNumber(),
         totalSpent: D(c.totalSpent).toNumber(),
         salesCount: c._count.sales,
@@ -74,6 +75,7 @@ const routes: FastifyPluginAsync = async (app) => {
       phone: c.phone,
       address: c.address,
       note: c.note,
+      blocked: c.blocked,
       debt: D(c.debtBalance).toNumber(),
       totalSpent: D(c.totalSpent).toNumber(),
       salesCount: c.sales.length,
@@ -104,6 +106,122 @@ const routes: FastifyPluginAsync = async (app) => {
     const existing = await prisma.customer.findUnique({ where: { phone } });
     if (existing) return existing;
     return prisma.customer.create({ data: { ...body, phone } });
+  });
+
+  app.patch("/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z
+      .object({
+        name: z.string().min(1).optional(),
+        phone: z.string().min(7).optional(),
+        address: z.string().optional().nullable(),
+        note: z.string().optional().nullable(),
+        blocked: z.boolean().optional(),
+      })
+      .parse(req.body);
+    const before = await prisma.customer.findUnique({ where: { id } });
+    if (!before) return reply.code(404).send({ error: "not_found" });
+
+    const data: Record<string, unknown> = { ...body };
+    if (body.phone) data.phone = normalizePhone(body.phone);
+
+    const c = await prisma.customer.update({ where: { id }, data });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.currentUser!.id,
+        role: req.currentUser!.role,
+        action: "customer.update",
+        entityType: "customer",
+        entityId: id,
+        oldValue: { name: before.name, phone: before.phone, blocked: before.blocked },
+        newValue: body,
+      },
+    });
+    return c;
+  });
+
+  // Delete is hard only when the customer has no history to preserve;
+  // otherwise "blocked" is the durable way to cut them off (see PATCH above).
+  app.delete("/:id", { preHandler: requireRole("OPERATOR") }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const c = await prisma.customer.findUnique({ where: { id }, include: { _count: { select: { sales: true, debts: true } } } });
+    if (!c) return reply.code(404).send({ error: "not_found" });
+    if (c._count.sales > 0 || c._count.debts > 0) {
+      return reply.code(422).send({
+        error: "has_history",
+        message: "Bu mijozning savdo/qarz tarixi bor — o'chirib bo'lmaydi. Buning o'rniga bloklang.",
+      });
+    }
+    await prisma.customer.delete({ where: { id } });
+    await prisma.auditLog.create({
+      data: { userId: req.currentUser!.id, role: req.currentUser!.role, action: "customer.delete", entityType: "customer", entityId: id, oldValue: { name: c.name, phone: c.phone } },
+    });
+    return { ok: true };
+  });
+
+  // Turn a customer into a staff member without re-typing their phone (spec:
+  // "mijozlarni operatorlikka qo'shish"). Reuses the same phone -> role wiring
+  // as normal onboarding, so if they already have a Telegram account linked
+  // it is upgraded immediately.
+  app.post("/:id/promote", { preHandler: requireRole("ADMIN") }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { role, position, department, branch } = z
+      .object({
+        role: z.enum(["ADMIN", "MANAGER", "OPERATOR", "WORKER"]).default("OPERATOR"),
+        position: z.string().optional(),
+        department: z.string().optional(),
+        branch: z.string().optional(),
+      })
+      .parse(req.body ?? {});
+    const customer = await prisma.customer.findUnique({ where: { id } });
+    if (!customer) return reply.code(404).send({ error: "not_found" });
+
+    const existingEmployee = await prisma.employee.findUnique({ where: { phone: customer.phone } });
+    if (existingEmployee) return reply.code(409).send({ error: "already_employee", message: "Bu raqam allaqachon xodim sifatida ro'yxatda" });
+
+    const [nameParts, positionId, departmentId, branchId] = await Promise.all([
+      Promise.resolve(customer.name.trim().split(/\s+/)),
+      position ? prisma.position.upsert({ where: { name: position }, create: { name: position }, update: {} }).then((p) => p.id) : undefined,
+      department ? prisma.department.upsert({ where: { name: department }, create: { name: department }, update: {} }).then((d) => d.id) : undefined,
+      branch ? prisma.branch.upsert({ where: { name: branch }, create: { name: branch }, update: {} }).then((b) => b.id) : undefined,
+    ]);
+
+    const employee = await prisma.employee.create({
+      data: {
+        firstName: nameParts[0] || customer.name,
+        lastName: nameParts.slice(1).join(" ") || null,
+        phone: customer.phone,
+        role,
+        status: "ACTIVE",
+        positionId,
+        departmentId,
+        branchId,
+        note: `Mijozdan tayinlandi (${customer.id})`,
+        startedAt: new Date(),
+      },
+    });
+
+    // if this phone already has a Telegram account, upgrade it immediately
+    const user = await prisma.user.findUnique({ where: { phoneNumber: customer.phone } });
+    if (user) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { role, status: "ACTIVE", employeeId: employee.id },
+      });
+      await prisma.employee.update({ where: { id: employee.id }, data: { telegramUserId: user.telegramUserId, username: user.username } });
+    }
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.currentUser!.id,
+        role: "ADMIN",
+        action: "customer.promote",
+        entityType: "customer",
+        entityId: id,
+        newValue: { employeeId: employee.id, role },
+      },
+    });
+    return { ok: true, employeeId: employee.id, linkedExistingAccount: !!user };
   });
 
   // partial debt repayment (spec §20)
