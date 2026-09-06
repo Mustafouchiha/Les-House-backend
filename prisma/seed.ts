@@ -38,6 +38,11 @@ async function main() {
     create: { id: "seed-branch-asaka", name: "Asaka — markaziy", city: "Asaka" },
     update: {},
   });
+  await prisma.branch.upsert({
+    where: { name: "Shahrixon markazi" },
+    create: { name: "Shahrixon markazi", city: "Shahrixon" },
+    update: {},
+  });
 
   for (const name of DEPARTMENTS)
     await prisma.department.upsert({ where: { name }, create: { name }, update: {} });
