@@ -42,6 +42,9 @@ export async function buildServer() {
     return reply.code(status).send({ error: err.name || "error", message: err.message });
   });
 
+  // Render pings "/" (health check + wake from hibernate); answer it so the
+  // platform log doesn't fill with "Route HEAD:/ not found" 404s.
+  app.get("/", async () => ({ ok: true, service: "taxta-bozor-api", ts: Date.now() }));
   app.get("/health", async () => ({ ok: true, ts: Date.now() }));
   app.get("/api/health", async () => ({ ok: true, ts: Date.now() }));
 
