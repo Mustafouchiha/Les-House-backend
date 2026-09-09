@@ -16,6 +16,29 @@ export async function sendTelegramMessage(chatId: string | number, text: string)
   }
 }
 
+/** Send a file (e.g. a receipt PDF) to a Telegram chat via the Bot API. */
+export async function sendTelegramDocument(
+  chatId: string | number,
+  filename: string,
+  bytes: Uint8Array,
+  caption?: string
+): Promise<void> {
+  if (!env.botToken) throw new Error("BOT_TOKEN sozlanmagan");
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  if (caption) form.append("caption", caption);
+  form.append("document", new Blob([bytes], { type: "application/pdf" }), filename);
+  const res = await fetch(`https://api.telegram.org/bot${env.botToken}/sendDocument`, {
+    method: "POST",
+    body: form,
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Telegram API xatosi (${res.status}): ${body.slice(0, 200)}`);
+  }
+}
+
 /**
  * Whether a Telegram chat still exists and can be reached — used to tell a
  * genuinely deactivated/deleted account apart from "someone else's live

@@ -4,8 +4,9 @@ import { prisma } from "../db.js";
 import { requireRole } from "../auth/rbac.js";
 import { createSale, refundSale, serializeSale, SaleError } from "../services/sale.service.js";
 import { normalizePhone } from "../services/auth.service.js";
-import { sendTelegramMessage } from "../lib/telegramApi.js";
+import { sendTelegramMessage, sendTelegramDocument } from "../lib/telegramApi.js";
 import { renderReceiptText } from "../lib/receiptText.js";
+import { renderReceiptPdf } from "../lib/receiptPdf.js";
 
 const createSchema = z.object({
   customerId: z.string().nullable().optional(),
@@ -73,6 +74,21 @@ const routes: FastifyPluginAsync = async (app) => {
     return { shop: "TAXTA BOZOR", ...serializeSale(s, req.currentUser!.role) };
   });
 
+  // downloadable receipt PDF
+  app.get("/:id/receipt.pdf", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const s = await prisma.sale.findUnique({
+      where: { id },
+      include: { items: true, payments: true, customer: true },
+    });
+    if (!s) return reply.code(404).send({ error: "not_found" });
+    const pdf = await renderReceiptPdf(serializeSale(s, "WORKER"));
+    return reply
+      .header("content-type", "application/pdf")
+      .header("content-disposition", `inline; filename="chek-${s.number}.pdf"`)
+      .send(Buffer.from(pdf));
+  });
+
   app.post("/", async (req, reply) => {
     const body = createSchema.parse(req.body);
     try {
@@ -129,14 +145,24 @@ const routes: FastifyPluginAsync = async (app) => {
     }
 
     // customer-facing view: role "WORKER" keeps cost/profit out
-    const text = renderReceiptText(serializeSale(sale, "WORKER"));
+    const view = serializeSale(sale, "WORKER");
+    const chatId = user.telegramUserId.toString();
     try {
-      await sendTelegramMessage(user.telegramUserId.toString(), text);
+      await sendTelegramMessage(chatId, renderReceiptText(view));
     } catch (e) {
       return reply.code(502).send({
         error: "send_failed",
         message: `Mijoz saqlandi, lekin chek yuborilmadi: ${(e as Error).message}`,
       });
+    }
+    // PDF is a best-effort extra — the text receipt already went through
+    let pdfSent = false;
+    try {
+      const pdf = await renderReceiptPdf(view);
+      await sendTelegramDocument(chatId, `chek-${view.number}.pdf`, pdf, `Chek № ${view.number}`);
+      pdfSent = true;
+    } catch (e) {
+      req.log.warn(`receipt pdf: ${(e as Error).message}`);
     }
 
     await prisma.auditLog.create({
@@ -149,7 +175,13 @@ const routes: FastifyPluginAsync = async (app) => {
         newValue: { phone: norm, customerId: customer.id },
       },
     });
-    return { ok: true, delivered: true, customerId: customer.id, message: `Chek ${norm} raqamiga yuborildi` };
+    return {
+      ok: true,
+      delivered: true,
+      pdf: pdfSent,
+      customerId: customer.id,
+      message: `Chek ${norm} raqamiga yuborildi${pdfSent ? " (matn + PDF)" : " (matn)"}`,
+    };
   });
 
   app.post("/:id/refund", { preHandler: requireRole("OPERATOR") }, async (req, reply) => {
