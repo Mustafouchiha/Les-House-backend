@@ -4,10 +4,17 @@ import { D, roundTo, sum, paymentsBalance } from "../lib/money.js";
 import type { CurrentUser } from "../auth/authPlugin.js";
 import type { PaymentType, Prisma } from "@prisma/client";
 
+export interface SaleCutInput {
+  cutLengthM: number | string;
+  markupPct?: number | string;
+}
 export interface SaleItemInput {
   productId: string;
   quantity: number | string;
   unitPrice: number | string;
+  // when present: cut one piece to `cutLengthM`; the remainder becomes a new
+  // residual product (unit PIECE, +10% price). Remainder must be >= 1 m.
+  cut?: SaleCutInput | null;
 }
 export interface SalePaymentInput {
   type: PaymentType;
@@ -60,17 +67,57 @@ export async function createSale(user: CurrentUser, input: CreateSaleInput) {
       const movementRows: Prisma.StockMovementCreateManyInput[] = [];
       const batchUpdates: { id: string; left: number }[] = [];
       const productUpdates: { id: string; sold: number; stock: number }[] = [];
+      // residual pieces to spin off as their own products after the sale is written
+      const residuals: {
+        source: (typeof products)[number];
+        remLengthMm: number;
+        sellPrice: number;
+        minPrice: number;
+        unitCost: number;
+      }[] = [];
 
       for (const line of input.items) {
         const p = pMap.get(line.productId);
         if (!p) throw new SaleError(`Mahsulot topilmadi: ${line.productId}`);
 
-        const qty = D(line.quantity);
-        const price = roundTo(line.unitPrice);
+        // ---- cut-to-length: price the piece, keep the remainder as a new SKU ----
+        let cutInfo: { cutM: Decimal; totalM: Decimal; remM: Decimal } | null = null;
+        if (line.cut) {
+          const totalM = D(p.length).div(1000);
+          if (totalM.lte(0)) {
+            throw new SaleError(`${p.name}: uzunlik kiritilmagan — kesib bo'lmaydi`, { productId: p.id });
+          }
+          const cutM = D(line.cut.cutLengthM);
+          if (cutM.lte(0) || cutM.gte(totalM)) {
+            throw new SaleError(
+              `${p.name}: kesish uzunligi 0 dan katta va ${totalM} m dan kichik bo'lishi kerak`,
+              { productId: p.id, totalM: totalM.toNumber() }
+            );
+          }
+          const remM = totalM.minus(cutM);
+          if (remM.lt(1)) {
+            throw new SaleError(
+              `${p.name}: kesishdan keyin ${remM} m qoladi — kamida 1 m qolishi shart`,
+              { productId: p.id, remM: remM.toNumber() }
+            );
+          }
+          cutInfo = { cutM, totalM, remM };
+        }
+
+        const qty = cutInfo ? D(1) : D(line.quantity);
+        let price: Decimal;
+        if (cutInfo) {
+          // authoritative price: (cutM / totalM) * sellPrice * (1 + markup)
+          const markup = Decimal.max(0, Decimal.min(100, D(line.cut!.markupPct ?? 0))).div(100);
+          const perM = D(p.sellPrice).div(cutInfo.totalM);
+          price = roundTo(cutInfo.cutM.times(perM).times(markup.plus(1)));
+        } else {
+          price = roundTo(line.unitPrice);
+        }
         if (qty.lte(0)) throw new SaleError(`${p.name}: miqdor musbat bo'lishi kerak`);
         if (price.lte(0)) throw new SaleError(`${p.name}: narx musbat bo'lishi kerak`);
 
-        if (D(p.minPrice).gt(0) && price.lt(p.minPrice) && !allowBelowMin) {
+        if (!cutInfo && D(p.minPrice).gt(0) && price.lt(p.minPrice) && !allowBelowMin) {
           throw new SaleError(
             `${p.name}: ${price} — minimal narx ${p.minPrice} dan past`,
             { productId: p.id, minPrice: p.minPrice }
@@ -104,20 +151,36 @@ export async function createSale(user: CurrentUser, input: CreateSaleInput) {
           need = need.minus(take);
         }
 
+        // a whole piece is consumed for a cut, but only the sold length's share
+        // of its cost belongs to this sale — the rest rides with the remainder
+        let saleLineCost = lineCost;
+        if (cutInfo) {
+          saleLineCost = lineCost.times(cutInfo.cutM).div(cutInfo.totalM);
+          const remCost = lineCost.minus(saleLineCost);
+          const perM = D(p.sellPrice).div(cutInfo.totalM);
+          residuals.push({
+            source: p,
+            remLengthMm: cutInfo.remM.times(1000).toNumber(),
+            sellPrice: roundTo(cutInfo.remM.times(perM).times(1.1)).toNumber(),
+            minPrice: roundTo(cutInfo.remM.times(perM)).toNumber(),
+            unitCost: roundTo(remCost, 4).toNumber(),
+          });
+        }
+
         const lineTotal = roundTo(qty.times(price));
-        const unitCost = qty.gt(0) ? lineCost.div(qty) : D(0);
+        const unitCost = qty.gt(0) ? saleLineCost.div(qty) : D(0);
         subtotal = subtotal.plus(lineTotal);
-        cogs = cogs.plus(lineCost);
+        cogs = cogs.plus(saleLineCost);
 
         itemRows.push({
           productId: p.id,
-          name: p.name,
+          name: cutInfo ? `${p.name} — ${cutInfo.cutM}m kesilgan` : p.name,
           unit: p.unit,
           quantity: qty.toNumber(),
           unitPrice: price.toNumber(),
           lineTotal: lineTotal.toNumber(),
           unitCost: roundTo(unitCost, 4).toNumber(),
-          lineCost: roundTo(lineCost, 4).toNumber(),
+          lineCost: roundTo(saleLineCost, 4).toNumber(),
           batchId: firstBatchId,
         });
         movementRows.push({
@@ -193,6 +256,57 @@ export async function createSale(user: CurrentUser, input: CreateSaleInput) {
       await tx.stockMovement.createMany({
         data: movementRows.map((m) => ({ ...m, refId: sale.id })),
       });
+
+      // spin the cut remainders off as their own residual products (unit PIECE)
+      for (const r of residuals) {
+        const s = r.source;
+        const sku = "R-" + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
+        const rp = await tx.product.create({
+          data: {
+            sku,
+            name: `${s.name} — ${D(r.remLengthMm).div(1000)}m qoldiq`,
+            categoryId: s.categoryId,
+            typeId: s.typeId,
+            branchId: s.branchId,
+            material: s.material,
+            woodType: s.woodType,
+            quality: s.quality,
+            unit: "PIECE",
+            dimX: s.dimX,
+            dimY: s.dimY,
+            length: r.remLengthMm,
+            cost: r.unitCost,
+            sellPrice: r.sellPrice,
+            startPrice: r.sellPrice,
+            minPrice: r.minPrice,
+            receivedQty: 1,
+            stockQty: 1,
+            isResidual: true,
+            note: `Kesishdan qoldi — savdo #${sale.number}`,
+          },
+        });
+        await tx.inventoryBatch.create({
+          data: {
+            productId: rp.id,
+            quantity: 1,
+            quantityLeft: 1,
+            unitCost: r.unitCost,
+            currency: "UZS",
+            receivedAt: new Date(),
+          },
+        });
+        await tx.stockMovement.create({
+          data: {
+            productId: rp.id,
+            type: "CUT",
+            quantity: 1,
+            reason: `Kesishdan qoldi (savdo #${sale.number})`,
+            refType: "cut",
+            refId: sale.id,
+            userId: user.id,
+          },
+        });
+      }
 
       // debt
       if (debtAmount.gt(0) && input.customerId) {

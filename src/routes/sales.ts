@@ -20,6 +20,12 @@ const createSchema = z.object({
         productId: z.string(),
         quantity: z.number().positive(),
         unitPrice: z.number().positive(),
+        cut: z
+          .object({
+            cutLengthM: z.number().positive(),
+            markupPct: z.number().min(0).max(100).optional(),
+          })
+          .nullish(),
       })
     )
     .min(1),
