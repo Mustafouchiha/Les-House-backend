@@ -74,6 +74,10 @@ export function serializeProduct(
 
   return {
     ...base,
+    dimX: p.dimX != null ? D(p.dimX).toNumber() : null,
+    dimY: p.dimY != null ? D(p.dimY).toNumber() : null,
+    dimZ: p.dimZ != null ? D(p.dimZ).toNumber() : null,
+    length: p.length != null ? D(p.length).toNumber() : null,
     cost: D(p.cost).toNumber(),
     startPrice: D(p.startPrice).toNumber(),
     minPrice: D(p.minPrice).toNumber(),
