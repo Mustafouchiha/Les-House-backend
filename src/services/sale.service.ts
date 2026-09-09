@@ -352,6 +352,7 @@ export function serializeSale(sale: SaleWithRels, role: string) {
     sellerName: sale.sellerName,
     customerId: sale.customerId,
     customerName: sale.customer?.name ?? null,
+    customerPhone: sale.customer?.phone ?? null,
     subtotal: Number(sale.subtotal),
     discount: Number(sale.discount),
     roundingDiscount: Number(sale.roundingDiscount),
